@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    USB device filter for flutter_usb_serial example app.
+    Lists common USB-to-serial adapter VID:PID pairs so Android will
+    offer to launch this app when the device is plugged in.
+
+    vendor-id / product-id values are DECIMAL.
+-->
+<resources>
+
+    <!-- FTDI (VID 0x0403 = 1027) -->
+    <usb-device vendor-id="1027" product-id="24577" />  <!-- FT232R  0x6001 -->
+    <usb-device vendor-id="1027" product-id="24592" />  <!-- FT232H  0x6010 -->
+    <usb-device vendor-id="1027" product-id="24593" />  <!-- FT4232H 0x6011 -->
+    <usb-device vendor-id="1027" product-id="24596" />  <!-- FT232B  0x6014 -->
+    <usb-device vendor-id="1027" product-id="24597" />  <!-- FT230X  0x6015 -->
+
+    <!-- CP210x Silicon Labs (VID 0x10C4 = 4292) -->
+    <usb-device vendor-id="4292" product-id="60000" />  <!-- CP2102  0xEA60 -->
+    <usb-device vendor-id="4292" product-id="60001" />  <!-- CP2105  0xEA61 -->
+    <usb-device vendor-id="4292" product-id="60016" />  <!-- CP2108  0xEA70 -->
+    <usb-device vendor-id="4292" product-id="60017" />  <!-- CP2102N 0xEA71 -->
+
+    <!-- Prolific PL2303 (VID 0x067B = 1659) -->
+    <usb-device vendor-id="1659" product-id="8963"  />  <!-- PL2303  0x2303 -->
+    <usb-device vendor-id="1659" product-id="8965"  />  <!-- PL2303GS 0x2305 -->
+
+    <!-- QinHeng CH34x (VID 0x1A86 = 6790) -->
+    <usb-device vendor-id="6790" product-id="21972" />  <!-- CH340   0x5592 -->
+    <usb-device vendor-id="6790" product-id="21975" />  <!-- CH341   0x5595 -->
+    <usb-device vendor-id="6790" product-id="29987" />  <!-- CH9102  0x7523 -->
+
+    <!-- CDC ACM (many boards; catch-all by class is handled in code) -->
+    <!-- Arduino Uno R3 (VID 0x2341 = 9025) -->
+    <usb-device vendor-id="9025" />
+
+    <!-- SparkFun / Arduino clones using ATmega16U2 (VID 0x1B4F = 6991) -->
+    <usb-device vendor-id="6991" />
+
+</resources>
