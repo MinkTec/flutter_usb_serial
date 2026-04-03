@@ -43,6 +43,19 @@ class FlutterUsbSerialPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private var pendingPermissionResult: Result? = null
     private var pendingPermissionReceiver: BroadcastReceiver? = null
 
+    // ── Hotplug device events ─────────────────────────────────────────────────
+
+    private var devicesEventSink: EventChannel.EventSink? = null
+
+    private val hotplugReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                UsbManager.ACTION_USB_DEVICE_ATTACHED,
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> emitDeviceSnapshot()
+            }
+        }
+    }
+
     // ── Inner types ───────────────────────────────────────────────────────────
 
     private inner class PortEntry(
@@ -58,6 +71,7 @@ class FlutterUsbSerialPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     companion object {
         private const val METHOD_CHANNEL = "flutter_usb_serial"
         private const val EVENT_CHANNEL_PREFIX = "flutter_usb_serial/read"
+        private const val DEVICES_EVENT_CHANNEL = "flutter_usb_serial/devices"
         private const val ACTION_USB_PERMISSION = "de.minktec.flutter_usb_serial.USB_PERMISSION"
         private const val MAX_PENDING_BUFFERS = 50
     }
@@ -69,12 +83,40 @@ class FlutterUsbSerialPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         messenger = binding.binaryMessenger
         methodChannel = MethodChannel(messenger, METHOD_CHANNEL)
         methodChannel.setMethodCallHandler(this)
+
+        // Register persistent hotplug receiver
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(hotplugReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            appContext.registerReceiver(hotplugReceiver, filter)
+        }
+
+        // Set up the devices EventChannel
+        val devicesChannel = EventChannel(messenger, DEVICES_EVENT_CHANNEL)
+        devicesChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                devicesEventSink = events
+                // Emit current snapshot immediately on subscribe
+                emitDeviceSnapshot()
+            }
+
+            override fun onCancel(arguments: Any?) {
+                devicesEventSink = null
+            }
+        })
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel.setMethodCallHandler(null)
         portMap.values.forEach { closeEntry(it) }
         portMap.clear()
+        try { appContext.unregisterReceiver(hotplugReceiver) } catch (_: Exception) {}
+        devicesEventSink = null
     }
 
     // ── ActivityAware ─────────────────────────────────────────────────────────
@@ -439,6 +481,31 @@ class FlutterUsbSerialPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun emitDeviceSnapshot() {
+        val sink = devicesEventSink ?: return
+        val prober = UsbSerialProber.getDefaultProber()
+        val usbMgr = usbManager()
+        val list = mutableListOf<Map<String, Any?>>()
+        for (device in usbMgr.deviceList.values) {
+            val driver = prober.probeDevice(device) ?: continue
+            list.add(
+                mapOf(
+                    "deviceId"         to device.deviceId,
+                    "deviceName"       to device.deviceName,
+                    "vendorId"         to device.vendorId,
+                    "productId"        to device.productId,
+                    "manufacturerName" to device.manufacturerName,
+                    "productName"      to device.productName,
+                    "serialNumber"     to safeSerialNumber(device),
+                    "driverType"       to driverTypeName(driver),
+                    "portCount"        to driver.ports.size,
+                    "hasPermission"    to usbMgr.hasPermission(device),
+                )
+            )
+        }
+        mainHandler.post { sink.success(list) }
+    }
 
     private fun usbManager(): UsbManager =
         appContext.getSystemService(Context.USB_SERVICE) as UsbManager

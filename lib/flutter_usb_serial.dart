@@ -39,6 +39,7 @@ class FlutterUsbSerial {
   FlutterUsbSerial._();
 
   static const _ch = MethodChannel('flutter_usb_serial');
+  static const _devicesCh = EventChannel('flutter_usb_serial/devices');
 
   // ── Device enumeration ──────────────────────────────────────────────────
 
@@ -54,6 +55,23 @@ class FlutterUsbSerial {
         .whereType<Map<Object?, Object?>>()
         .map(UsbDevice.fromMap)
         .toList();
+  }
+
+  // ── Device events ────────────────────────────────────────────────────────
+
+  /// A stream of device-list snapshots pushed whenever a USB serial device
+  /// is attached or detached.
+  ///
+  /// Each event is the full list of currently connected USB serial devices
+  /// at the moment of the change. Subscribe once and react to each snapshot.
+  static Stream<List<UsbDevice>> get deviceEvents {
+    return _devicesCh.receiveBroadcastStream().map((raw) {
+      if (raw is! List) return <UsbDevice>[];
+      return raw
+          .whereType<Map<Object?, Object?>>()
+          .map(UsbDevice.fromMap)
+          .toList();
+    });
   }
 
   // ── Permissions ─────────────────────────────────────────────────────────
