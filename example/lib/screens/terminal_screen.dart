@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_usb_serial/flutter_usb_serial.dart';
 
+import '../widgets/commands_sheet.dart';
+
 // ── Data model ─────────────────────────────────────────────────────────────────
 
 class _TerminalEntry {
@@ -37,6 +39,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
   bool _isConnected = false;
   bool _isConnecting = false;
   StreamSubscription<Uint8List>? _subscription;
+  final ValueNotifier<bool> _isConnectedNotifier = ValueNotifier(false);
 
   // ── Terminal output ─────────────────────────────────────────────────────────
   final List<_TerminalEntry> _entries = [];
@@ -84,6 +87,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _port?.close();
     _scrollController.dispose();
     _sendController.dispose();
+    _isConnectedNotifier.dispose();
     super.dispose();
   }
 
@@ -192,6 +196,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
         _isConnected = true;
         _supportedControlLines = supported;
       });
+      _isConnectedNotifier.value = true;
 
       // Start control line polling
       _controlLineTimer = Timer.periodic(
@@ -225,6 +230,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
         _controlLines = {};
         _supportedControlLines = [];
       });
+      _isConnectedNotifier.value = false;
     }
   }
 
@@ -297,6 +303,32 @@ class _TerminalScreenState extends State<TerminalScreen> {
           SnackBar(content: Text('DTR error: $e')),
         );
     }
+  }
+
+  // ── Commands sheet ──────────────────────────────────────────────────────────
+
+  Future<bool> _sendRawBytes(Uint8List data) async {
+    final port = _port;
+    if (port == null) return false;
+    try {
+      await port.write(data);
+      _addEntry(isRx: false, data: data);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _openCommandsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CommandsSheet(
+        sendBytes: _sendRawBytes,
+        isConnected: _isConnectedNotifier,
+      ),
+    );
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -397,6 +429,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   labels: const ['ASCII', 'HEX'],
                   selected: _displayHex ? 1 : 0,
                   onChanged: (i) => setState(() => _displayHex = i == 1),
+                ),
+                // Commands & Macros
+                IconButton(
+                  icon: const Icon(Icons.playlist_play, size: 18),
+                  tooltip: 'Commands & Macros',
+                  color: Colors.white54,
+                  onPressed: _openCommandsSheet,
                 ),
                 const Spacer(),
                 // Auto-scroll
