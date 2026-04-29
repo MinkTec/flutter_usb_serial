@@ -10,7 +10,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  meta: ^1.9.0
   plugin_platform_interface: ^2.0.2
+  flutter_libserialport:
+    git:
+      url: git@github.com:MinkTec/flutter_libserialport
+      ref: e55768e034a98293f76ca5b9fa939625ad9be2f1
 
 dev_dependencies:
   flutter_test:
@@ -37,6 +42,15 @@ flutter:
       android:
         package: de.minktec.flutter_usb_serial
         pluginClass: FlutterUsbSerialPlugin
+      windows:
+        dartPluginClass: FlutterUsbSerialDesktop
+      linux:
+        dartPluginClass: FlutterUsbSerialDesktop
+      macos:
+        dartPluginClass: FlutterUsbSerialDesktop
+      web:
+        pluginClass: FlutterUsbSerialWeb
+        fileName: src/flutter_usb_serial_web.dart
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:

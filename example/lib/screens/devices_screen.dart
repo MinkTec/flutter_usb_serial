@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_usb_serial/flutter_usb_serial.dart';
 
@@ -15,6 +16,10 @@ class _DevicesScreenState extends State<DevicesScreen> {
   bool _loading = false;
   String? _error;
 
+  /// On web, Web Serial is only available in Chrome/Edge. Show a banner if not.
+  bool get _webSerialUnsupported =>
+      kIsWeb && !webSerialSupported;
+
   @override
   void initState() {
     super.initState();
@@ -22,12 +27,18 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Future<void> _loadDevices() async {
+    if (_webSerialUnsupported) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final devices = await FlutterUsbSerial.getDevices();
+      var devices = await FlutterUsbSerial.getDevices();
+      // On web, always append the "connect new device" sentinel at the end
+      // so the user can pick a new port even if they already have some.
+      if (kIsWeb) {
+        devices = [...devices, FlutterUsbSerialWeb.newDeviceSentinel];
+      }
       if (mounted) setState(() => _devices = devices);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -39,8 +50,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
   Future<void> _onDeviceTapped(UsbDevice device) async {
     UsbDevice d = device;
 
-    // Request permission if needed
-    if (!d.hasPermission) {
+    // Web Serial: the picker sentinel opens the browser picker inside openPort.
+    // Skip the permission / port-selection logic for the sentinel.
+    final isSentinel =
+        kIsWeb && device.deviceId == FlutterUsbSerialWeb.kPickerSentinelId;
+
+    if (!isSentinel && !d.hasPermission) {
       final granted = await _requestPermission(d);
       if (!granted) return;
       // Refresh device list to get updated permission state
@@ -52,9 +67,9 @@ class _DevicesScreenState extends State<DevicesScreen> {
       );
     }
 
-    // Port selection for multi-port devices
+    // Port selection for multi-port devices (not applicable on web).
     int portNumber = 0;
-    if (d.portCount > 1) {
+    if (!kIsWeb && d.portCount > 1) {
       final selected = await _selectPort(d);
       if (selected == null) return;
       portNumber = selected;
@@ -121,11 +136,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _loadDevices,
-          ),
+          if (!_webSerialUnsupported)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+              onPressed: _loading ? null : _loadDevices,
+            ),
         ],
       ),
       body: _buildBody(cs),
@@ -133,6 +149,11 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Widget _buildBody(ColorScheme cs) {
+    // Unsupported browser banner.
+    if (_webSerialUnsupported) {
+      return _buildUnsupportedBrowser(cs);
+    }
+
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -153,7 +174,42 @@ class _DevicesScreenState extends State<DevicesScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadDevices,
+      // On web always show the list (at minimum the sentinel is present).
       child: _devices.isEmpty ? _buildEmpty(cs) : _buildList(cs),
+    );
+  }
+
+  Widget _buildUnsupportedBrowser(ColorScheme cs) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.browser_not_supported,
+                size: 64, color: cs.error.withOpacity(0.8)),
+            const SizedBox(height: 20),
+            Text(
+              'Web Serial API not supported',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This feature requires Chrome 89+, Edge 89+, or Opera 75+.\n'
+              'Firefox and Safari do not support the Web Serial API.',
+              style: TextStyle(
+                fontSize: 14,
+                color: cs.onSurface.withOpacity(0.6),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -178,7 +234,9 @@ class _DevicesScreenState extends State<DevicesScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Connect a USB serial device and pull to refresh',
+                kIsWeb
+                    ? 'Pull to refresh — previously granted ports will appear here'
+                    : 'Connect a USB serial device and pull to refresh',
                 style: TextStyle(
                   fontSize: 13,
                   color: cs.onSurface.withOpacity(0.4),
@@ -196,13 +254,18 @@ class _DevicesScreenState extends State<DevicesScreen> {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: _devices.length,
-      itemBuilder: (_, i) => _DeviceCard(
-        device: _devices[i],
-        onTap: () => _onDeviceTapped(_devices[i]),
-        onPermissionTap: () => _requestPermission(_devices[i]).then(
-          (_) => _loadDevices(),
-        ),
-      ),
+      itemBuilder: (_, i) {
+        final device = _devices[i];
+        final isSentinel =
+            kIsWeb && device.deviceId == FlutterUsbSerialWeb.kPickerSentinelId;
+        return _DeviceCard(
+          device: device,
+          isSentinel: isSentinel,
+          onTap: () => _onDeviceTapped(device),
+          onPermissionTap: () =>
+              _requestPermission(device).then((_) => _loadDevices()),
+        );
+      },
     );
   }
 }
@@ -214,15 +277,59 @@ class _DeviceCard extends StatelessWidget {
     required this.device,
     required this.onTap,
     required this.onPermissionTap,
+    this.isSentinel = false,
   });
 
   final UsbDevice device;
   final VoidCallback onTap;
   final VoidCallback onPermissionTap;
+  final bool isSentinel;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
+    // Sentinel card — "Connect new device…"
+    if (isSentinel) {
+      return Card(
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: cs.secondary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.add_circle_outline,
+                      color: cs.secondary, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    device.displayName,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: cs.secondary,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: cs.onSurface.withOpacity(0.3)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final permColor = device.hasPermission
         ? const Color(0xFF4CAF50)
         : const Color(0xFFFF9800);
@@ -298,7 +405,8 @@ class _DeviceCard extends StatelessWidget {
                       children: [
                         // Permission chip
                         GestureDetector(
-                          onTap: device.hasPermission ? null : onPermissionTap,
+                          onTap:
+                              device.hasPermission ? null : onPermissionTap,
                           child: _Chip(
                             label: device.hasPermission
                                 ? 'Allowed'
@@ -310,13 +418,14 @@ class _DeviceCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        // Port count chip
-                        _Chip(
-                          label:
-                              '${device.portCount} port${device.portCount == 1 ? '' : 's'}',
-                          icon: Icons.settings_input_component,
-                          color: cs.primary,
-                        ),
+                        // Port count chip (not shown on web)
+                        if (!kIsWeb)
+                          _Chip(
+                            label:
+                                '${device.portCount} port${device.portCount == 1 ? '' : 's'}',
+                            icon: Icons.settings_input_component,
+                            color: cs.primary,
+                          ),
                       ],
                     ),
                   ],
