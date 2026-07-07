@@ -11,17 +11,17 @@ typedef _MockHandler = Future<Object?> Function(MethodCall call);
 void _setMock(_MockHandler handler) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('flutter_usb_serial'),
-    handler,
-  );
+        const MethodChannel('flutter_usb_serial'),
+        handler,
+      );
 }
 
 void _clearMock() {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('flutter_usb_serial'),
-    null,
-  );
+        const MethodChannel('flutter_usb_serial'),
+        null,
+      );
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -37,19 +37,18 @@ Map<Object?, Object?> _rawDevice({
   String driverType = 'Ftdi',
   int portCount = 1,
   bool hasPermission = true,
-}) =>
-    {
-      'deviceId': deviceId,
-      'deviceName': deviceName,
-      'vendorId': vendorId,
-      'productId': productId,
-      'manufacturerName': manufacturerName,
-      'productName': productName,
-      'serialNumber': serialNumber,
-      'driverType': driverType,
-      'portCount': portCount,
-      'hasPermission': hasPermission,
-    };
+}) => {
+  'deviceId': deviceId,
+  'deviceName': deviceName,
+  'vendorId': vendorId,
+  'productId': productId,
+  'manufacturerName': manufacturerName,
+  'productName': productName,
+  'serialNumber': serialNumber,
+  'driverType': driverType,
+  'portCount': portCount,
+  'hasPermission': hasPermission,
+};
 
 UsbDevice _device({bool hasPermission = true}) =>
     UsbDevice.fromMap(_rawDevice(hasPermission: hasPermission));
@@ -59,7 +58,14 @@ UsbDevice _device({bool hasPermission = true}) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  tearDown(_clearMock);
+  setUp(() {
+    FlutterUsbSerial.debugUseMethodChannelForTesting = true;
+  });
+
+  tearDown(() {
+    _clearMock();
+    FlutterUsbSerial.debugUseMethodChannelForTesting = false;
+  });
 
   group('FlutterUsbSerial.getDevices', () {
     test('returns empty list when channel returns null', () async {
@@ -83,10 +89,12 @@ void main() {
     });
 
     test('returns multiple devices', () async {
-      _setMock((_) async => [
-            _rawDevice(deviceId: 1, vendorId: 0x0403),
-            _rawDevice(deviceId: 2, vendorId: 0x10C4, driverType: 'Cp21xx'),
-          ]);
+      _setMock(
+        (_) async => [
+          _rawDevice(deviceId: 1, vendorId: 0x0403),
+          _rawDevice(deviceId: 2, vendorId: 0x10C4, driverType: 'Cp21xx'),
+        ],
+      );
       final devices = await FlutterUsbSerial.getDevices();
       expect(devices, hasLength(2));
       expect(devices[0].deviceId, 1);
@@ -185,8 +193,9 @@ void main() {
       _setMock((_) async => null);
       expect(
         () => FlutterUsbSerial.openPort(_device()),
-        throwsA(isA<PlatformException>()
-            .having((e) => e.code, 'code', 'OPEN_FAILED')),
+        throwsA(
+          isA<PlatformException>().having((e) => e.code, 'code', 'OPEN_FAILED'),
+        ),
       );
     });
 
@@ -231,12 +240,19 @@ void main() {
     });
 
     test('propagates PlatformException from channel', () async {
-      _setMock((_) async =>
-          throw PlatformException(code: 'NO_PERMISSION', message: 'denied'));
+      _setMock(
+        (_) async =>
+            throw PlatformException(code: 'NO_PERMISSION', message: 'denied'),
+      );
       expect(
         () => FlutterUsbSerial.openPort(_device()),
-        throwsA(isA<PlatformException>()
-            .having((e) => e.code, 'code', 'NO_PERMISSION')),
+        throwsA(
+          isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            'NO_PERMISSION',
+          ),
+        ),
       );
     });
   });
@@ -356,14 +372,16 @@ void main() {
 
   group('UsbPort.getControlLines', () {
     test('returns parsed map', () async {
-      _setMock((_) async => {
-            'RTS': true,
-            'CTS': false,
-            'DTR': true,
-            'DSR': false,
-            'CD': false,
-            'RI': false,
-          });
+      _setMock(
+        (_) async => {
+          'RTS': true,
+          'CTS': false,
+          'DTR': true,
+          'DSR': false,
+          'CD': false,
+          'RI': false,
+        },
+      );
       final lines = await UsbPort.fromPortId(0).getControlLines();
       expect(lines['RTS'], isTrue);
       expect(lines['CTS'], isFalse);
@@ -410,8 +428,9 @@ void main() {
         captured = call;
         return null;
       });
-      await UsbPort.fromPortId(5)
-          .purgeHwBuffers(purgeWriteBuffers: false, purgeReadBuffers: true);
+      await UsbPort.fromPortId(
+        5,
+      ).purgeHwBuffers(purgeWriteBuffers: false, purgeReadBuffers: true);
       expect(captured?.arguments['purgeWrite'], isFalse);
       expect(captured?.arguments['purgeRead'], isTrue);
     });
@@ -451,8 +470,11 @@ void main() {
         });
         await UsbPort.fromPortId(0).setFlowControl(fc);
         expect(captured?.method, 'setFlowControl');
-        expect(captured?.arguments['mode'], fc.androidName,
-            reason: 'Variant ${fc.name} should send androidName');
+        expect(
+          captured?.arguments['mode'],
+          fc.androidName,
+          reason: 'Variant ${fc.name} should send androidName',
+        );
       }
     });
   });

@@ -28,7 +28,7 @@
 /// ```
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/services.dart';
 
 import 'src/flutter_usb_serial_desktop_stub.dart'
@@ -59,8 +59,11 @@ class FlutterUsbSerial {
   static const _ch = MethodChannel('flutter_usb_serial');
   static const _devicesCh = EventChannel('flutter_usb_serial/devices');
 
+  @visibleForTesting
+  static bool debugUseMethodChannelForTesting = false;
+
   static bool get _isDesktop =>
-      !kIsWeb && platform_lib.isDesktop;
+      !debugUseMethodChannelForTesting && !kIsWeb && platform_lib.isDesktop;
 
   // ── Device enumeration ──────────────────────────────────────────────────
 
